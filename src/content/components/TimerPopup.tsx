@@ -143,7 +143,7 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopup
   const popupStyle: React.CSSProperties = {
     position: 'absolute',
     top: '100%',
-    left: 0,
+    right: 0,
     zIndex: 10000,
     width: 280,
     background: '#1e1e2e',
