@@ -41,3 +41,25 @@ export interface TimerState {
   currentEntry: TimeCrowdTimeEntry | null;
   currentIssueId: string | null;
 }
+
+// Linear API types
+export interface LinearIssueNode {
+  id: string;
+  identifier: string;
+}
+
+export interface LinearAttachmentNode {
+  id: string;
+  url: string;
+  title: string;
+  subtitle: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface LinearAttachmentCreateInput {
+  issueId: string;
+  title: string;
+  subtitle: string;
+  url: string;
+  metadata: Record<string, unknown>;
+}
