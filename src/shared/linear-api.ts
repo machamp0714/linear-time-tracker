@@ -24,17 +24,22 @@ export class LinearApi {
   }
 
   async getIssueByIdentifier(identifier: string): Promise<LinearIssueNode | null> {
-    const data = await this.graphql<{
-      issues: { nodes: LinearIssueNode[] };
-    }>(
-      `query ($filter: IssueFilter) {
-        issues(filter: $filter, first: 1) {
-          nodes { id identifier }
-        }
-      }`,
-      { filter: { identifier: { eq: identifier } } },
-    );
-    return data.issues.nodes[0] ?? null;
+    try {
+      const data = await this.graphql<{
+        issue: LinearIssueNode;
+      }>(
+        `query ($id: String!) {
+          issue(id: $id) {
+            id
+            identifier
+          }
+        }`,
+        { id: identifier },
+      );
+      return data.issue;
+    } catch {
+      return null;
+    }
   }
 
   async getIssueAttachments(issueId: string): Promise<LinearAttachmentNode[]> {

@@ -18,9 +18,7 @@ describe('LinearApi', () => {
       json: () =>
         Promise.resolve({
           data: {
-            issues: {
-              nodes: [{ id: 'uuid-123', identifier: 'TIM-42' }],
-            },
+            issue: { id: 'uuid-123', identifier: 'TIM-42' },
           },
         }),
     });
@@ -42,10 +40,11 @@ describe('LinearApi', () => {
 
   it('Issue が見つからない場合はnullを返す', async () => {
     mockFetch.mockResolvedValueOnce({
-      ok: true,
+      ok: false,
+      status: 404,
       json: () =>
         Promise.resolve({
-          data: { issues: { nodes: [] } },
+          errors: [{ message: 'Entity not found' }],
         }),
     });
 
@@ -117,6 +116,6 @@ describe('LinearApi', () => {
       json: () => Promise.resolve({ errors: [{ message: 'Authentication required' }] }),
     });
 
-    await expect(api.getIssueByIdentifier('TIM-1')).rejects.toThrow();
+    await expect(api.getIssueAttachments('uuid-123')).rejects.toThrow('Authentication required');
   });
 });

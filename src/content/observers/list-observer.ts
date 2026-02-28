@@ -12,6 +12,7 @@ export function observeIssueList(
   getTimeMap: () => Record<string, number>,
   onStart: (issueId: string, title: string, teamId: number, categoryId: number) => void,
   onStop: () => void,
+  registerIssueId: (issueId: string) => void,
 ) {
   function processIssueRows() {
     const rows = document.querySelectorAll('a[data-list-row="true"]');
@@ -29,6 +30,7 @@ export function observeIssueList(
       const title = titleCol?.textContent?.trim() || '';
 
       row.setAttribute(PROCESSED_ATTR, 'true');
+      registerIssueId(issueId);
 
       const container = document.createElement('div');
       container.style.display = 'inline-flex';

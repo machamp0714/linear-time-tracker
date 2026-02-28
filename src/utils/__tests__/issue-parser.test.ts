@@ -36,10 +36,11 @@ describe('matchIssueIdInTitle', () => {
 });
 
 describe('formatDuration', () => {
-  it('秒数を人が読みやすい時間形式にフォーマットする', () => {
-    expect(formatDuration(3600)).toBe('1h 0m');
-    expect(formatDuration(5400)).toBe('1h 30m');
-    expect(formatDuration(900)).toBe('15m');
-    expect(formatDuration(0)).toBe('0m');
+  it('秒数をHH:MM:SS形式にフォーマットする', () => {
+    expect(formatDuration(3600)).toBe('01:00:00');
+    expect(formatDuration(5400)).toBe('01:30:00');
+    expect(formatDuration(900)).toBe('00:15:00');
+    expect(formatDuration(0)).toBe('00:00:00');
+    expect(formatDuration(3661)).toBe('01:01:01');
   });
 });

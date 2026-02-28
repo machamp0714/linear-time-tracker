@@ -38,30 +38,45 @@ async function getApi(): Promise<TimeCrowdApi> {
   return new TimeCrowdApi(token);
 }
 
-async function syncTimeToLinear(issueId: string, durationToAdd: number): Promise<void> {
-  const result = await chrome.storage.local.get(['linear_api_key']);
-  const linearKey = result['linear_api_key'] as string | undefined;
-  if (!linearKey) return;
+async function syncTimeToLinear(issueId: string): Promise<void> {
+  console.log(`[TimeCrowd] syncTimeToLinear called: issueId=${issueId}`);
+
+  const stored = await chrome.storage.local.get(['linear_api_key', 'timecrowd_token']);
+  const linearKey = stored['linear_api_key'] as string | undefined;
+  const tcToken = stored['timecrowd_token'] as string | undefined;
+  if (!linearKey) {
+    console.log('[TimeCrowd] Linear API key not set, skipping sync');
+    return;
+  }
+  if (!tcToken) {
+    console.log('[TimeCrowd] TimeCrowd token not set, skipping sync');
+    return;
+  }
+
+  // TimeCrowdから全エントリを取得し、このIssueの合計時間を算出
+  const tcApi = new TimeCrowdApi(tcToken);
+  const entries = await tcApi.getTimeEntries();
+  const totalSeconds = entries
+    .filter((e) => e.task && matchIssueIdInTitle(e.task.title, issueId))
+    .reduce((sum, e) => sum + (e.duration || 0), 0);
+  console.log(
+    `[TimeCrowd] Total time from TimeCrowd: ${totalSeconds}s (${formatDuration(totalSeconds)})`,
+  );
+
+  if (totalSeconds === 0) return;
 
   const linearApi = new LinearApi(linearKey);
 
+  console.log(`[TimeCrowd] Resolving issue identifier: ${issueId}`);
   const issue = await linearApi.getIssueByIdentifier(issueId);
   if (!issue) {
     console.warn(`[TimeCrowd] Linear issue not found: ${issueId}`);
     return;
   }
+  console.log(`[TimeCrowd] Resolved issue: ${issue.identifier} -> ${issue.id}`);
 
   const attachmentUrl = `timecrowd://linear/${issueId}`;
-  const attachments = await linearApi.getIssueAttachments(issue.id);
-  const existing = attachments.find((a) => a.url === attachmentUrl);
-
-  const previousSeconds =
-    existing && typeof existing.metadata?.trackedSeconds === 'number'
-      ? existing.metadata.trackedSeconds
-      : 0;
-  const totalSeconds = previousSeconds + durationToAdd;
-
-  await linearApi.createAttachment({
+  const attachResult = await linearApi.createAttachment({
     issueId: issue.id,
     title: 'TimeCrowd 作業時間',
     subtitle: formatDuration(totalSeconds),
@@ -72,6 +87,7 @@ async function syncTimeToLinear(issueId: string, durationToAdd: number): Promise
       lastUpdated: new Date().toISOString(),
     },
   });
+  console.log(`[TimeCrowd] Attachment created/updated: success=${attachResult.success}`);
 }
 
 async function handleMessage(message: MessageRequest): Promise<MessageResponse> {
@@ -101,7 +117,7 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
           const prevEntry = await api.stopTimer(timerState.currentEntry.id);
           const prevIssueId = timerState.currentIssueId;
           if (prevIssueId && prevEntry.duration > 0) {
-            syncTimeToLinear(prevIssueId, prevEntry.duration).catch((err) => {
+            syncTimeToLinear(prevIssueId).catch((err) => {
               console.error('[TimeCrowd] Linear sync failed (auto-switch):', err);
             });
           }
@@ -129,10 +145,21 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
       }
 
       case 'STOP_TIMER': {
+        console.log('[TimeCrowd] STOP_TIMER received', {
+          isRunning: timerState.isRunning,
+          currentEntry: timerState.currentEntry?.id,
+          currentIssueId: timerState.currentIssueId,
+        });
         if (!timerState.isRunning || !timerState.currentEntry) {
+          console.log('[TimeCrowd] No active timer, skipping');
           return { success: true, data: timerState };
         }
         const stoppedEntry = await api.stopTimer(timerState.currentEntry.id);
+        console.log('[TimeCrowd] TimeCrowd stop response:', {
+          id: stoppedEntry.id,
+          duration: stoppedEntry.duration,
+          stopped_at: stoppedEntry.stopped_at,
+        });
         const stoppedIssueId = timerState.currentIssueId;
         timerState = {
           isRunning: false,
@@ -141,8 +168,13 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
         };
         await chrome.storage.local.remove('timer_tracking');
 
+        console.log('[TimeCrowd] Will sync to Linear?', {
+          stoppedIssueId,
+          duration: stoppedEntry.duration,
+          willSync: !!(stoppedIssueId && stoppedEntry.duration > 0),
+        });
         if (stoppedIssueId && stoppedEntry.duration > 0) {
-          syncTimeToLinear(stoppedIssueId, stoppedEntry.duration).catch((err) => {
+          syncTimeToLinear(stoppedIssueId).catch((err) => {
             console.error('[TimeCrowd] Linear sync failed:', err);
           });
         }
@@ -209,7 +241,7 @@ async function handlePollAlarm(): Promise<void> {
       timerState = { isRunning: false, currentEntry: null, currentIssueId: null };
 
       if (entry.duration > 0) {
-        await syncTimeToLinear(tracking.issueId, entry.duration);
+        await syncTimeToLinear(tracking.issueId);
       }
     }
   } catch (err) {

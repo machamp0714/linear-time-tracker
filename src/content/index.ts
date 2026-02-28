@@ -31,6 +31,13 @@ async function refreshTimeMap(issueIds: string[]) {
   if (res.success) timeMap = { ...timeMap, ...res.data };
 }
 
+function registerIssueId(issueId: string) {
+  if (!(issueId in timeMap)) {
+    timeMap[issueId] = 0;
+    refreshTimeMap([issueId]);
+  }
+}
+
 async function handleStart(issueId: string, title: string, teamId: number, categoryId: number) {
   const linearUrl = `https://linear.app${window.location.pathname}`;
   const res = await chrome.runtime.sendMessage({
@@ -56,8 +63,8 @@ async function handleStop() {
 function init() {
   refreshTimerState();
 
-  observeIssueList(getTimerState, getTimeMap, handleStart, handleStop);
-  observeIssueDetail(getTimerState, getTimeMap, handleStart, handleStop);
+  observeIssueList(getTimerState, getTimeMap, handleStart, handleStop, registerIssueId);
+  observeIssueDetail(getTimerState, getTimeMap, handleStart, handleStop, registerIssueId);
 
   // 30秒ごとに時間データを更新
   setInterval(() => {

@@ -15,6 +15,7 @@ export function observeIssueDetail(
   getTimeMap: () => Record<string, number>,
   onStart: (issueId: string, title: string, teamId: number, categoryId: number) => void,
   onStop: () => void,
+  registerIssueId: (issueId: string) => void,
 ) {
   function findProjectSection(): Element | null {
     // Find the "Project" label span in the right sidebar.
@@ -42,6 +43,7 @@ export function observeIssueDetail(
     const issueId = extractedId;
 
     projectSection.setAttribute(PROCESSED_ATTR, 'true');
+    registerIssueId(issueId);
 
     if (currentRoot) {
       currentRoot.unmount();
