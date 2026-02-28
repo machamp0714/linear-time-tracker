@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "TimeCrowd for Linear",
+  "version": "1.0.0",
+  "description": "LinearのIssueでTimeCrowdの打刻を管理",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://linear.app/*", "https://timecrowd.net/*"],
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://linear.app/*"],
+      "js": ["src/content/index.ts"],
+      "css": []
+    }
+  ],
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "icons": {}
+}

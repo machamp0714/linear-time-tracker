@@ -1,0 +1,2 @@
+// Content Script entry point - implemented in Task 7
+export {};
