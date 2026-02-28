@@ -6,6 +6,7 @@ interface TimerPopupProps {
   issueTitle: string;
   onStart: (teamId: number, categoryId: number) => void;
   onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 function sendMessage<T>(message: unknown): Promise<T> {
@@ -17,7 +18,7 @@ interface SelectedItem {
   categoryId: number;
 }
 
-export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopupProps) {
+export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }: TimerPopupProps) {
   const [recentCategories, setRecentCategories] = useState<RecentCategory[]>([]);
   const [allCategories, setAllCategories] = useState<CategoryWithTeam[]>([]);
   const [allCategoriesLoaded, setAllCategoriesLoaded] = useState(false);
@@ -26,6 +27,18 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopup
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentLoading, setRecentLoading] = useState(true);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Calculate fixed position from anchor element
+  useEffect(() => {
+    if (!anchorRef?.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const popupWidth = 280;
+    // Position below the button, aligned to the right edge
+    let left = rect.right - popupWidth;
+    if (left < 8) left = 8;
+    setPopupPos({ top: rect.bottom + 4, left });
+  }, [anchorRef]);
 
   const allCategoriesLoadedRef = useRef(false);
   const allCategoriesLoadingRef = useRef(false);
@@ -141,9 +154,9 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopup
 
   // Styles
   const popupStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
+    position: popupPos ? 'fixed' : 'absolute',
+    top: popupPos ? popupPos.top : '100%',
+    left: popupPos ? popupPos.left : 0,
     zIndex: 10000,
     width: 280,
     background: '#1e1e2e',

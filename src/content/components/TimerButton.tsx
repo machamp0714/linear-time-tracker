@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { TimerPopup } from './TimerPopup';
 
 interface TimerButtonProps {
@@ -19,6 +19,7 @@ export function TimerButton({
   onStop,
 }: TimerButtonProps) {
   const [showPopup, setShowPopup] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -41,6 +42,7 @@ export function TimerButton({
   return (
     <div style={{ position: 'relative', display: 'inline-flex' }}>
       <button
+        ref={btnRef}
         className={btnClass}
         onClick={handleClick}
         title={isActive ? 'タイマー停止' : 'タイマー開始'}
@@ -53,6 +55,7 @@ export function TimerButton({
           issueTitle={issueTitle}
           onStart={handleStart}
           onClose={() => setShowPopup(false)}
+          anchorRef={btnRef}
         />
       )}
     </div>
