@@ -74,6 +74,8 @@ export function observeIssueList(
             createElement(TimeBadge, {
               seconds: timeMap[issueId] || 0,
               variant: 'compact',
+              isRunning: state.isRunning && state.currentIssueId === issueId,
+              startedAt: state.currentEntry?.started_at ?? null,
             }),
           ),
         );
