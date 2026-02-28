@@ -56,9 +56,10 @@ async function syncTimeToLinear(issueId: string): Promise<void> {
   // TimeCrowdから全エントリを取得し、このIssueの合計時間を算出
   const tcApi = new TimeCrowdApi(tcToken);
   const entries = await tcApi.getTimeEntries();
-  const totalSeconds = entries
-    .filter((e) => e.task && matchIssueIdInTitle(e.task.title, issueId))
-    .reduce((sum, e) => sum + (e.duration || 0), 0);
+  const matchingEntries = entries.filter(
+    (e) => e.task && matchIssueIdInTitle(e.task.title, issueId),
+  );
+  const totalSeconds = matchingEntries.reduce((sum, e) => sum + (e.duration || 0), 0);
   console.log(
     `[TimeCrowd] Total time from TimeCrowd: ${totalSeconds}s (${formatDuration(totalSeconds)})`,
   );
@@ -75,7 +76,10 @@ async function syncTimeToLinear(issueId: string): Promise<void> {
   }
   console.log(`[TimeCrowd] Resolved issue: ${issue.identifier} -> ${issue.id}`);
 
-  const attachmentUrl = `timecrowd://linear/${issueId}`;
+  const taskId = matchingEntries[0]?.task?.id;
+  const attachmentUrl = taskId
+    ? `https://timecrowd.net/app/mytasks/${taskId}/edit`
+    : `https://timecrowd.net/app/mytasks`;
   const attachResult = await linearApi.createAttachment({
     issueId: issue.id,
     title: 'TimeCrowd 作業時間',
