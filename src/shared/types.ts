@@ -63,3 +63,19 @@ export interface LinearAttachmentCreateInput {
   url: string;
   metadata: Record<string, unknown>;
 }
+
+export interface RecentCategory {
+  teamId: number;
+  teamName: string;
+  categoryId: number;
+  categoryTitle: string;
+  usedAt: string; // ISO 8601
+}
+
+export interface CategoryWithTeam {
+  teamId: number;
+  teamName: string;
+  categoryId: number;
+  categoryTitle: string;
+  categoryColor: string;
+}
