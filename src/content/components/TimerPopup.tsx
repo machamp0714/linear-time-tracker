@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import type { TimeCrowdTeam, TimeCrowdCategory } from '@/shared/types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { RecentCategory, CategoryWithTeam } from '@/shared/types';
 
 interface TimerPopupProps {
   issueId: string;
@@ -12,124 +12,308 @@ function sendMessage<T>(message: unknown): Promise<T> {
   return chrome.runtime.sendMessage(message);
 }
 
-export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopupProps) {
-  const [teams, setTeams] = useState<TimeCrowdTeam[]>([]);
-  const [categories, setCategories] = useState<TimeCrowdCategory[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+interface SelectedItem {
+  teamId: number;
+  categoryId: number;
+}
 
+export function TimerPopup({ issueId, issueTitle, onStart, onClose }: TimerPopupProps) {
+  const [recentCategories, setRecentCategories] = useState<RecentCategory[]>([]);
+  const [allCategories, setAllCategories] = useState<CategoryWithTeam[]>([]);
+  const [allCategoriesLoaded, setAllCategoriesLoaded] = useState(false);
+  const [allCategoriesLoading, setAllCategoriesLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selected, setSelected] = useState<SelectedItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [recentLoading, setRecentLoading] = useState(true);
+
+  const allCategoriesLoadedRef = useRef(false);
+  const allCategoriesLoadingRef = useRef(false);
+
+  // Load recent categories on mount
   useEffect(() => {
     sendMessage<{
       success: boolean;
-      data: TimeCrowdTeam[];
+      data: RecentCategory[];
       error?: string;
-    }>({ type: 'GET_TEAMS' })
+    }>({ type: 'GET_RECENT_CATEGORIES' })
       .then((res) => {
         if (res.success) {
-          setTeams(res.data);
-          if (res.data.length === 1) setSelectedTeam(res.data[0].id);
+          setRecentCategories(res.data);
         } else {
-          setError(res.error || 'チームの読み込みに失敗しました');
+          setError(res.error || '最近のカテゴリーの読み込みに失敗しました');
         }
       })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        setError('最近のカテゴリーの読み込みに失敗しました');
+      })
+      .finally(() => {
+        setRecentLoading(false);
+      });
   }, []);
 
-  useEffect(() => {
-    if (!selectedTeam) return;
+  // Lazy-load all categories (called once when user starts typing)
+  const loadAllCategories = useCallback(() => {
+    if (allCategoriesLoadedRef.current || allCategoriesLoadingRef.current) return;
+    allCategoriesLoadingRef.current = true;
+    setAllCategoriesLoading(true);
+
     sendMessage<{
       success: boolean;
-      data: TimeCrowdCategory[];
+      data: CategoryWithTeam[];
       error?: string;
-    }>({
-      type: 'GET_CATEGORIES',
-      teamId: selectedTeam,
-    }).then((res) => {
-      if (res.success) {
-        setCategories(res.data);
-        if (res.data.length > 0) setSelectedCategory(res.data[0].id);
-      } else {
-        setError(res.error || 'カテゴリの読み込みに失敗しました');
-      }
-    });
-  }, [selectedTeam]);
+    }>({ type: 'GET_ALL_CATEGORIES' })
+      .then((res) => {
+        if (res.success) {
+          setAllCategories(res.data);
+          allCategoriesLoadedRef.current = true;
+          setAllCategoriesLoaded(true);
+        } else {
+          setError(res.error || 'カテゴリーの読み込みに失敗しました');
+        }
+      })
+      .catch(() => {
+        setError('カテゴリーの読み込みに失敗しました');
+      })
+      .finally(() => {
+        allCategoriesLoadingRef.current = false;
+        setAllCategoriesLoading(false);
+      });
+  }, []);
 
-  const handleStart = () => {
-    if (selectedTeam && selectedCategory) {
-      onStart(selectedTeam, selectedCategory);
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    if (query.length > 0) {
+      loadAllCategories();
     }
+    setSelected(null);
   };
 
-  if (loading) {
-    return (
-      <div className="tc-popup">
-        <span>読み込み中...</span>
-      </div>
+  const handleSelectRecent = (item: RecentCategory) => {
+    setSelected({ teamId: item.teamId, categoryId: item.categoryId });
+  };
+
+  const handleSelectCategory = (item: CategoryWithTeam) => {
+    setSelected({ teamId: item.teamId, categoryId: item.categoryId });
+  };
+
+  const handleStart = () => {
+    if (!selected) return;
+    // Fire-and-forget: save recent category
+    const matchedAll = allCategories.find(
+      (c) => c.teamId === selected.teamId && c.categoryId === selected.categoryId,
     );
-  }
+    const matchedRecent = recentCategories.find(
+      (c) => c.teamId === selected.teamId && c.categoryId === selected.categoryId,
+    );
+    if (matchedAll) {
+      sendMessage({
+        type: 'SAVE_RECENT_CATEGORY',
+        teamId: matchedAll.teamId,
+        teamName: matchedAll.teamName,
+        categoryId: matchedAll.categoryId,
+        categoryTitle: matchedAll.categoryTitle,
+      }).catch(() => {});
+    } else if (matchedRecent) {
+      sendMessage({
+        type: 'SAVE_RECENT_CATEGORY',
+        teamId: matchedRecent.teamId,
+        teamName: matchedRecent.teamName,
+        categoryId: matchedRecent.categoryId,
+        categoryTitle: matchedRecent.categoryTitle,
+      }).catch(() => {});
+    }
+    onStart(selected.teamId, selected.categoryId);
+  };
+
+  const isSearching = searchQuery.length > 0;
+
+  const filteredCategories = isSearching
+    ? allCategories.filter((c) => {
+        const q = searchQuery.toLowerCase();
+        return c.categoryTitle.toLowerCase().includes(q) || c.teamName.toLowerCase().includes(q);
+      })
+    : [];
+
+  const isItemSelected = (teamId: number, categoryId: number) =>
+    selected !== null && selected.teamId === teamId && selected.categoryId === categoryId;
+
+  // Styles
+  const popupStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    zIndex: 10000,
+    width: 280,
+    background: '#1e1e2e',
+    border: '1px solid #383850',
+    borderRadius: 8,
+    padding: 12,
+    fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    fontSize: 13,
+    color: '#e0e0e0',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+  };
+
+  const searchInputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '6px 10px',
+    background: '#383850',
+    border: '1px solid #4a4a66',
+    borderRadius: 6,
+    color: '#e0e0e0',
+    fontSize: 13,
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  const listContainerStyle: React.CSSProperties = {
+    maxHeight: 200,
+    overflowY: 'auto',
+    marginTop: 8,
+  };
+
+  const sectionLabelStyle: React.CSSProperties = {
+    fontSize: 11,
+    color: '#8b8fa3',
+    marginBottom: 4,
+    fontWeight: 500,
+  };
+
+  const itemBaseStyle: React.CSSProperties = {
+    padding: '6px 8px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 13,
+    lineHeight: '1.4',
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '6px 0',
+    marginTop: 8,
+    background: '#5e6ad2',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  };
+
+  const disabledButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    opacity: 0.4,
+    cursor: 'default',
+  };
+
+  const emptyTextStyle: React.CSSProperties = {
+    fontSize: 12,
+    color: '#8b8fa3',
+    padding: '8px 4px',
+    lineHeight: '1.5',
+  };
+
+  const closeButtonStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    background: 'none',
+    border: 'none',
+    color: '#8b8fa3',
+    cursor: 'pointer',
+    fontSize: 16,
+  };
+
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
+  const getItemStyle = (index: number, teamId: number, categoryId: number): React.CSSProperties => {
+    const isSelected = isItemSelected(teamId, categoryId);
+    const isHovered = hoveredIndex === index;
+    return {
+      ...itemBaseStyle,
+      background: isSelected ? 'rgba(94, 106, 210, 0.3)' : isHovered ? '#2a2a3e' : 'transparent',
+      color: isSelected ? '#c0c8ff' : '#e0e0e0',
+    };
+  };
 
   return (
-    <div className="tc-popup" onClick={(e) => e.stopPropagation()}>
-      <div style={{ marginBottom: 4, fontWeight: 500 }}>
+    <div style={popupStyle} onClick={(e) => e.stopPropagation()}>
+      <div style={{ marginBottom: 8, fontWeight: 500, paddingRight: 20 }}>
         {issueId}: {issueTitle}
       </div>
 
-      <label>チーム</label>
-      <select value={selectedTeam ?? ''} onChange={(e) => setSelectedTeam(Number(e.target.value))}>
-        <option value="" disabled>
-          チームを選択
-        </option>
-        {teams.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </select>
+      <input
+        type="text"
+        placeholder="カテゴリーを検索..."
+        value={searchQuery}
+        onChange={handleSearchChange}
+        style={searchInputStyle}
+        autoFocus
+      />
 
-      {selectedTeam && (
-        <>
-          <label>カテゴリ</label>
-          <select
-            value={selectedCategory ?? ''}
-            onChange={(e) => setSelectedCategory(Number(e.target.value))}
-          >
-            <option value="" disabled>
-              カテゴリを選択
-            </option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
+      <div style={listContainerStyle}>
+        {isSearching ? (
+          // Search results
+          <>
+            {allCategoriesLoading && !allCategoriesLoaded && (
+              <div style={emptyTextStyle}>検索中...</div>
+            )}
+            {allCategoriesLoaded && filteredCategories.length === 0 && (
+              <div style={emptyTextStyle}>一致するカテゴリーが見つかりません</div>
+            )}
+            {filteredCategories.map((c, i) => (
+              <div
+                key={`${String(c.teamId)}-${String(c.categoryId)}`}
+                style={getItemStyle(i, c.teamId, c.categoryId)}
+                onClick={() => handleSelectCategory(c)}
+                onMouseEnter={() => setHoveredIndex(i)}
+                onMouseLeave={() => setHoveredIndex(null)}
+              >
+                {c.categoryTitle} - {c.teamName}
+              </div>
             ))}
-          </select>
-        </>
-      )}
+          </>
+        ) : (
+          // Recent categories
+          <>
+            <div style={sectionLabelStyle}>最近使用したカテゴリー</div>
+            {recentLoading && <div style={emptyTextStyle}>読み込み中...</div>}
+            {!recentLoading && recentCategories.length === 0 && (
+              <div style={emptyTextStyle}>
+                まだ使用履歴がありません。検索からカテゴリーを選択してください。
+              </div>
+            )}
+            {!recentLoading &&
+              recentCategories.slice(0, 5).map((c, i) => (
+                <div
+                  key={`${String(c.teamId)}-${String(c.categoryId)}`}
+                  style={getItemStyle(i + 1000, c.teamId, c.categoryId)}
+                  onClick={() => handleSelectRecent(c)}
+                  onMouseEnter={() => setHoveredIndex(i + 1000)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                >
+                  {c.categoryTitle} - {c.teamName}
+                </div>
+              ))}
+          </>
+        )}
+      </div>
 
       <button
-        className="tc-popup-btn"
+        style={selected ? buttonStyle : disabledButtonStyle}
         onClick={handleStart}
-        disabled={!selectedTeam || !selectedCategory}
+        disabled={!selected}
       >
         打刻開始
       </button>
 
-      {error && <div className="tc-popup-error">{error}</div>}
+      {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 4 }}>{error}</div>}
 
-      <button
-        onClick={onClose}
-        style={{
-          position: 'absolute',
-          top: 8,
-          right: 8,
-          background: 'none',
-          border: 'none',
-          color: '#8b8fa3',
-          cursor: 'pointer',
-          fontSize: 16,
-        }}
-      >
+      <button onClick={onClose} style={closeButtonStyle}>
         ×
       </button>
     </div>
