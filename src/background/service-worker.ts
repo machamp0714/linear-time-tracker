@@ -98,7 +98,13 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
 
       case 'START_TIMER': {
         if (timerState.isRunning && timerState.currentEntry) {
-          await api.stopTimer(timerState.currentEntry.id);
+          const prevEntry = await api.stopTimer(timerState.currentEntry.id);
+          const prevIssueId = timerState.currentIssueId;
+          if (prevIssueId && prevEntry.duration > 0) {
+            syncTimeToLinear(prevIssueId, prevEntry.duration).catch((err) => {
+              console.error('[TimeCrowd] Linear sync failed (auto-switch):', err);
+            });
+          }
         }
         const entry = await api.startTimer(
           message.teamId,
@@ -187,10 +193,10 @@ async function handlePollAlarm(): Promise<void> {
 
   const api = new TimeCrowdApi(token);
   try {
-    const entries = await api.getTimeEntries();
-    const entry = entries.find((e) => e.id === tracking.entryId);
-
-    if (!entry) {
+    let entry;
+    try {
+      entry = await api.getTimeEntry(tracking.entryId);
+    } catch {
       await chrome.storage.local.remove('timer_tracking');
       timerState = { isRunning: false, currentEntry: null, currentIssueId: null };
       return;

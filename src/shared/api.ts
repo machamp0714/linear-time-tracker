@@ -60,6 +60,10 @@ export class TimeCrowdApi {
     });
   }
 
+  async getTimeEntry(entryId: number): Promise<TimeCrowdTimeEntry> {
+    return this.request<TimeCrowdTimeEntry>(`/time_entries/${entryId}`);
+  }
+
   async getTimeEntries(): Promise<TimeCrowdTimeEntry[]> {
     return this.request<TimeCrowdTimeEntry[]>('/time_entries');
   }
