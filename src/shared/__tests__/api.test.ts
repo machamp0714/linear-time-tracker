@@ -59,6 +59,21 @@ describe('TimeCrowdApi', () => {
       'https://linear.app/team/TIM/issue/TIM-1/test-task',
     );
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Verify task creation uses nested "task" key and parent_id for category
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://timecrowd.net/api/v1/teams/10/tasks',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          task: {
+            title: '[TIM-1] Test task',
+            url: 'https://linear.app/team/TIM/issue/TIM-1/test-task',
+            parent_id: 1,
+          },
+        }),
+      }),
+    );
     expect(entry).toEqual({ id: 200, started_at: '2026-01-01T00:00:00Z' });
   });
 

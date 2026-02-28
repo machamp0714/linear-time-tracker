@@ -16,19 +16,32 @@ export function observeIssueDetail(
   onStart: (issueId: string, title: string, teamId: number, categoryId: number) => void,
   onStop: () => void,
 ) {
+  function findProjectSection(): Element | null {
+    // Find the "Project" label span in the right sidebar.
+    // Structure: div (section) > span "Project" + div (value with data-detail-button inside)
+    const spans = document.querySelectorAll('main span');
+    for (const span of spans) {
+      if (span.textContent?.trim() !== 'Project') continue;
+      const section = span.parentElement;
+      if (!section) continue;
+      // Verify this is a sidebar property section by checking for data-detail-button in siblings
+      if (section.querySelector('[data-detail-button]')) {
+        return section;
+      }
+    }
+    return null;
+  }
+
   function processDetail() {
-    const header = document.querySelector('[class*="IssueDetailHeader"], [class*="issueHeader"]');
-    if (!header || header.getAttribute(PROCESSED_ATTR)) return;
+    const projectSection = findProjectSection();
+    if (!projectSection || projectSection.getAttribute(PROCESSED_ATTR)) return;
 
     const url = window.location.pathname;
     const extractedId = extractIssueId(url);
     if (!extractedId) return;
     const issueId = extractedId;
 
-    const titleEl = document.querySelector('[class*="issueTitle"], [class*="IssueTitle"], h1');
-    const title = titleEl?.textContent || '';
-
-    header.setAttribute(PROCESSED_ATTR, 'true');
+    projectSection.setAttribute(PROCESSED_ATTR, 'true');
 
     if (currentRoot) {
       currentRoot.unmount();
@@ -40,11 +53,13 @@ export function observeIssueDetail(
     }
 
     const container = document.createElement('div');
-    container.style.display = 'inline-flex';
+    container.style.display = 'flex';
     container.style.alignItems = 'center';
-    container.style.marginLeft = '8px';
+    container.style.padding = '4px 0';
+    container.style.marginTop = '4px';
 
-    header.appendChild(container);
+    // Insert after the Project section
+    projectSection.after(container);
 
     const shadow = container.attachShadow({ mode: 'open' });
     const mountPoint = document.createElement('div');
@@ -52,9 +67,14 @@ export function observeIssueDetail(
 
     currentRoot = createRoot(mountPoint);
 
+    function getTitle(): string {
+      return document.querySelector('[aria-label="Issue title"]')?.textContent?.trim() || '';
+    }
+
     function render() {
       const state = getTimerState();
       const timeMap = getTimeMap();
+      const title = getTitle();
       currentRoot!.render(
         createElement(
           'div',

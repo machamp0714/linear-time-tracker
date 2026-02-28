@@ -14,21 +14,19 @@ export function observeIssueList(
   onStop: () => void,
 ) {
   function processIssueRows() {
-    const rows = document.querySelectorAll(
-      '[data-testid*="issue"], [class*="IssueRow"], [class*="issueRow"]',
-    );
+    const rows = document.querySelectorAll('a[data-list-row="true"]');
 
     rows.forEach((row) => {
       if (row.getAttribute(PROCESSED_ATTR)) return;
 
-      const issueIdEl = row.querySelector('[class*="identifier"], [class*="Identifier"]');
-      const issueIdText = issueIdEl?.textContent || '';
+      const identifierCol = row.querySelector('[data-list-grid-column="identifier"]');
+      const issueIdText = identifierCol?.textContent?.trim() || '';
       const extractedId = extractIssueId(issueIdText);
       if (!extractedId) return;
       const issueId = extractedId;
 
-      const titleEl = row.querySelector('[class*="title"], [class*="Title"]');
-      const title = titleEl?.textContent || '';
+      const titleCol = row.querySelector('[data-list-grid-column="title"]');
+      const title = titleCol?.textContent?.trim() || '';
 
       row.setAttribute(PROCESSED_ATTR, 'true');
 
@@ -37,7 +35,7 @@ export function observeIssueList(
       container.style.alignItems = 'center';
       container.style.marginLeft = '4px';
 
-      const insertTarget = issueIdEl?.parentElement || row;
+      const insertTarget = identifierCol || row;
       insertTarget.appendChild(container);
 
       const shadow = container.attachShadow({ mode: 'open' });

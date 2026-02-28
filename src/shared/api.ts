@@ -40,9 +40,11 @@ export class TimeCrowdApi {
     const task = await this.request<{ id: number }>(`/teams/${teamId}/tasks`, {
       method: 'POST',
       body: JSON.stringify({
-        title: `[${issueId}] ${title}`,
-        url: linearUrl,
-        category_id: categoryId,
+        task: {
+          title: `[${issueId}] ${title}`,
+          url: linearUrl,
+          parent_id: categoryId,
+        },
       }),
     });
 
