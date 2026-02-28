@@ -254,7 +254,13 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
   };
 
   return (
-    <div style={popupStyle} onClick={(e) => e.stopPropagation()}>
+    <div
+      style={popupStyle}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      onKeyUp={(e) => e.stopPropagation()}
+      onKeyPress={(e) => e.stopPropagation()}
+    >
       <div style={{ marginBottom: 8, fontWeight: 500, paddingRight: 20 }}>
         {issueId}: {issueTitle}
       </div>
