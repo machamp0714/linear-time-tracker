@@ -1,7 +1,7 @@
 import { TimeCrowdApi } from '@/shared/api';
 import { LinearApi } from '@/shared/linear-api';
 import type { MessageRequest, MessageResponse } from '@/shared/messages';
-import type { TimerState } from '@/shared/types';
+import type { TimerState, RecentCategory, CategoryWithTeam } from '@/shared/types';
 import { formatDuration, matchIssueIdInTitle } from '@/utils/issue-parser';
 
 let timerState: TimerState = {
@@ -188,6 +188,58 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
 
       case 'GET_CURRENT_TIMER': {
         return { success: true, data: timerState };
+      }
+
+      case 'GET_RECENT_CATEGORIES': {
+        const stored = await chrome.storage.local.get(['recent_categories']);
+        const recent = (stored['recent_categories'] as RecentCategory[]) || [];
+        return { success: true, data: recent };
+      }
+
+      case 'GET_ALL_CATEGORIES': {
+        const cacheKey = 'all_categories';
+        const cached = getCached<CategoryWithTeam[]>(cacheKey);
+        if (cached) return { success: true, data: cached };
+
+        const teams = await api.getTeams();
+        const allCategories: CategoryWithTeam[] = [];
+        const results = await Promise.all(
+          teams.map((team) => api.getCategories(team.id).then((cats) => ({ team, cats }))),
+        );
+        for (const { team, cats } of results) {
+          for (const cat of cats) {
+            allCategories.push({
+              teamId: team.id,
+              teamName: team.name,
+              categoryId: cat.id,
+              categoryTitle: cat.title,
+              categoryColor: cat.color,
+            });
+          }
+        }
+        setCache(cacheKey, allCategories);
+        return { success: true, data: allCategories };
+      }
+
+      case 'SAVE_RECENT_CATEGORY': {
+        const stored = await chrome.storage.local.get(['recent_categories']);
+        let recent = (stored['recent_categories'] as RecentCategory[]) || [];
+        // 重複削除
+        recent = recent.filter(
+          (r) => !(r.teamId === message.teamId && r.categoryId === message.categoryId),
+        );
+        // 先頭に追加
+        recent.unshift({
+          teamId: message.teamId,
+          teamName: message.teamName,
+          categoryId: message.categoryId,
+          categoryTitle: message.categoryTitle,
+          usedAt: new Date().toISOString(),
+        });
+        // 最大5件に制限
+        recent = recent.slice(0, 5);
+        await chrome.storage.local.set({ recent_categories: recent });
+        return { success: true, data: recent };
       }
 
       case 'GET_TIME_FOR_ISSUES': {
