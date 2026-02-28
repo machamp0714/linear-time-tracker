@@ -1,13 +1,20 @@
 import { TimeCrowdApi } from '@/shared/api';
+import { LinearApi } from '@/shared/linear-api';
 import type { MessageRequest, MessageResponse } from '@/shared/messages';
 import type { TimerState } from '@/shared/types';
-import { matchIssueIdInTitle } from '@/utils/issue-parser';
+import { formatDuration, matchIssueIdInTitle } from '@/utils/issue-parser';
 
 let timerState: TimerState = {
   isRunning: false,
   currentEntry: null,
   currentIssueId: null,
 };
+
+interface TimerTracking {
+  issueId: string;
+  entryId: number;
+  startedAt: string;
+}
 
 const cache = new Map<string, { data: unknown; expiry: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5分
@@ -29,6 +36,42 @@ async function getApi(): Promise<TimeCrowdApi> {
   if (!token)
     throw new Error('TimeCrowdトークンが未設定です。拡張機能の設定画面で入力してください。');
   return new TimeCrowdApi(token);
+}
+
+async function syncTimeToLinear(issueId: string, durationToAdd: number): Promise<void> {
+  const result = await chrome.storage.local.get(['linear_api_key']);
+  const linearKey = result['linear_api_key'] as string | undefined;
+  if (!linearKey) return;
+
+  const linearApi = new LinearApi(linearKey);
+
+  const issue = await linearApi.getIssueByIdentifier(issueId);
+  if (!issue) {
+    console.warn(`[TimeCrowd] Linear issue not found: ${issueId}`);
+    return;
+  }
+
+  const attachmentUrl = `timecrowd://linear/${issueId}`;
+  const attachments = await linearApi.getIssueAttachments(issue.id);
+  const existing = attachments.find((a) => a.url === attachmentUrl);
+
+  const previousSeconds =
+    existing && typeof existing.metadata?.trackedSeconds === 'number'
+      ? existing.metadata.trackedSeconds
+      : 0;
+  const totalSeconds = previousSeconds + durationToAdd;
+
+  await linearApi.createAttachment({
+    issueId: issue.id,
+    title: 'TimeCrowd 作業時間',
+    subtitle: formatDuration(totalSeconds),
+    url: attachmentUrl,
+    metadata: {
+      trackedSeconds: totalSeconds,
+      source: 'timecrowd-linear-tracker',
+      lastUpdated: new Date().toISOString(),
+    },
+  });
 }
 
 async function handleMessage(message: MessageRequest): Promise<MessageResponse> {
@@ -69,6 +112,13 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
           currentEntry: entry,
           currentIssueId: message.issueId,
         };
+        await chrome.storage.local.set({
+          timer_tracking: {
+            issueId: message.issueId,
+            entryId: entry.id,
+            startedAt: entry.started_at,
+          } satisfies TimerTracking,
+        });
         return { success: true, data: timerState };
       }
 
@@ -76,12 +126,21 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
         if (!timerState.isRunning || !timerState.currentEntry) {
           return { success: true, data: timerState };
         }
-        await api.stopTimer(timerState.currentEntry.id);
+        const stoppedEntry = await api.stopTimer(timerState.currentEntry.id);
+        const stoppedIssueId = timerState.currentIssueId;
         timerState = {
           isRunning: false,
           currentEntry: null,
           currentIssueId: null,
         };
+        await chrome.storage.local.remove('timer_tracking');
+
+        if (stoppedIssueId && stoppedEntry.duration > 0) {
+          syncTimeToLinear(stoppedIssueId, stoppedEntry.duration).catch((err) => {
+            console.error('[TimeCrowd] Linear sync failed:', err);
+          });
+        }
+
         return { success: true, data: timerState };
       }
 
