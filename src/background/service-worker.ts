@@ -173,3 +173,56 @@ chrome.runtime.onMessage.addListener((message: MessageRequest, _sender, sendResp
   handleMessage(message).then(sendResponse);
   return true; // 非同期レスポンス
 });
+
+// --- Polling: detect timer stops from TimeCrowd UI ---
+const POLL_ALARM_NAME = 'timecrowd-poll';
+const POLL_INTERVAL_MINUTES = 5;
+
+async function handlePollAlarm(): Promise<void> {
+  const stored = await chrome.storage.local.get(['timer_tracking', 'timecrowd_token']);
+  const tracking = stored['timer_tracking'] as TimerTracking | undefined;
+  const token = stored['timecrowd_token'] as string | undefined;
+
+  if (!tracking || !token) return;
+
+  const api = new TimeCrowdApi(token);
+  try {
+    const entries = await api.getTimeEntries();
+    const entry = entries.find((e) => e.id === tracking.entryId);
+
+    if (!entry) {
+      await chrome.storage.local.remove('timer_tracking');
+      timerState = { isRunning: false, currentEntry: null, currentIssueId: null };
+      return;
+    }
+
+    if (entry.stopped_at) {
+      console.log(`[TimeCrowd] Detected external stop for ${tracking.issueId}`);
+
+      await chrome.storage.local.remove('timer_tracking');
+      timerState = { isRunning: false, currentEntry: null, currentIssueId: null };
+
+      if (entry.duration > 0) {
+        await syncTimeToLinear(tracking.issueId, entry.duration);
+      }
+    }
+  } catch (err) {
+    console.error('[TimeCrowd] Poll check failed:', err);
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === POLL_ALARM_NAME) {
+    handlePollAlarm();
+  }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(POLL_ALARM_NAME, { periodInMinutes: POLL_INTERVAL_MINUTES });
+});
+
+chrome.alarms.get(POLL_ALARM_NAME, (alarm) => {
+  if (!alarm) {
+    chrome.alarms.create(POLL_ALARM_NAME, { periodInMinutes: POLL_INTERVAL_MINUTES });
+  }
+});
