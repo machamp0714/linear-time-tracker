@@ -3,8 +3,12 @@
   "name": "TimeCrowd for Linear",
   "version": "1.0.0",
   "description": "LinearのIssueでTimeCrowdの打刻を管理",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://linear.app/*", "https://timecrowd.net/*"],
+  "permissions": ["storage", "activeTab", "alarms"],
+  "host_permissions": [
+    "https://linear.app/*",
+    "https://timecrowd.net/*",
+    "https://api.linear.app/*"
+  ],
   "background": {
     "service_worker": "src/background/service-worker.ts",
     "type": "module"
