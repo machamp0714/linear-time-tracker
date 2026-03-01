@@ -1,7 +1,12 @@
 import { TimeCrowdApi } from '@/shared/api';
 import { LinearApi } from '@/shared/linear-api';
 import type { MessageRequest, MessageResponse } from '@/shared/messages';
-import type { TimerState, RecentCategory, CategoryWithTeam } from '@/shared/types';
+import type {
+  TimerState,
+  RecentCategory,
+  CategoryWithTeam,
+  TimeCrowdCategory,
+} from '@/shared/types';
 import { formatDuration, matchIssueIdInTitle } from '@/utils/issue-parser';
 
 let timerState: TimerState = {
@@ -206,16 +211,27 @@ async function handleMessage(message: MessageRequest): Promise<MessageResponse> 
         const results = await Promise.all(
           teams.map((team) => api.getCategories(team.id).then((cats) => ({ team, cats }))),
         );
-        for (const { team, cats } of results) {
+        // Recursively flatten nested category tree
+        const flattenCategories = (cats: TimeCrowdCategory[], teamId: number, teamName: string) => {
           for (const cat of cats) {
+            const fullTitle =
+              cat.ancestor_titles && cat.ancestor_titles.length > 0
+                ? `${cat.ancestor_titles.join(':')}:${cat.title}`
+                : cat.title;
             allCategories.push({
-              teamId: team.id,
-              teamName: team.name,
+              teamId,
+              teamName,
               categoryId: cat.id,
-              categoryTitle: cat.title,
+              categoryTitle: fullTitle,
               categoryColor: cat.color,
             });
+            if (cat.children && cat.children.length > 0) {
+              flattenCategories(cat.children, teamId, teamName);
+            }
           }
+        };
+        for (const { team, cats } of results) {
+          flattenCategories(cats, team.id, team.name);
         }
         setCache(cacheKey, allCategories);
         return { success: true, data: allCategories };

@@ -7,6 +7,10 @@ export interface TimeCrowdCategory {
   id: number;
   title: string;
   color: string;
+  ancestry_depth: number;
+  ancestor_titles: string[];
+  is_leaf: boolean;
+  children?: TimeCrowdCategory[];
 }
 
 export interface TimeCrowdTask {

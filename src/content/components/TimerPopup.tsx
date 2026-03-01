@@ -24,7 +24,9 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
   const [allCategoriesLoaded, setAllCategoriesLoaded] = useState(false);
   const [allCategoriesLoading, setAllCategoriesLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selected, setSelected] = useState<SelectedItem | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<SelectedItem | null>(null);
+  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentLoading, setRecentLoading] = useState(true);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
@@ -53,6 +55,11 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
       .then((res) => {
         if (res.success) {
           setRecentCategories(res.data);
+          if (res.data.length > 0) {
+            const first = res.data[0];
+            setSelectedCategory({ teamId: first.teamId, categoryId: first.categoryId });
+            setSelectedCategoryLabel(`${first.categoryTitle} - ${first.teamName}`);
+          }
         } else {
           setError(res.error || '最近のカテゴリーの読み込みに失敗しました');
         }
@@ -100,25 +107,30 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
     if (query.length > 0) {
       loadAllCategories();
     }
-    setSelected(null);
   };
 
   const handleSelectRecent = (item: RecentCategory) => {
-    setSelected({ teamId: item.teamId, categoryId: item.categoryId });
+    setSelectedCategory({ teamId: item.teamId, categoryId: item.categoryId });
+    setSelectedCategoryLabel(`${item.categoryTitle} - ${item.teamName}`);
+    setIsExpanded(false);
+    setSearchQuery('');
   };
 
   const handleSelectCategory = (item: CategoryWithTeam) => {
-    setSelected({ teamId: item.teamId, categoryId: item.categoryId });
+    setSelectedCategory({ teamId: item.teamId, categoryId: item.categoryId });
+    setSelectedCategoryLabel(`${item.categoryTitle} - ${item.teamName}`);
+    setIsExpanded(false);
+    setSearchQuery('');
   };
 
   const handleStart = () => {
-    if (!selected) return;
+    if (!selectedCategory) return;
     // Fire-and-forget: save recent category
     const matchedAll = allCategories.find(
-      (c) => c.teamId === selected.teamId && c.categoryId === selected.categoryId,
+      (c) => c.teamId === selectedCategory.teamId && c.categoryId === selectedCategory.categoryId,
     );
     const matchedRecent = recentCategories.find(
-      (c) => c.teamId === selected.teamId && c.categoryId === selected.categoryId,
+      (c) => c.teamId === selectedCategory.teamId && c.categoryId === selectedCategory.categoryId,
     );
     if (matchedAll) {
       sendMessage({
@@ -137,20 +149,39 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
         categoryTitle: matchedRecent.categoryTitle,
       }).catch(() => {});
     }
-    onStart(selected.teamId, selected.categoryId);
+    onStart(selectedCategory.teamId, selectedCategory.categoryId);
   };
 
   const isSearching = searchQuery.length > 0;
 
   const filteredCategories = isSearching
-    ? allCategories.filter((c) => {
+    ? (() => {
         const q = searchQuery.toLowerCase();
-        return c.categoryTitle.toLowerCase().includes(q) || c.teamName.toLowerCase().includes(q);
-      })
+        const matchFn = (title: string, team: string) =>
+          title.toLowerCase().includes(q) || team.toLowerCase().includes(q);
+        // Search all categories first
+        const fromAll = allCategories.filter((c) => matchFn(c.categoryTitle, c.teamName));
+        // Also include matching recent categories not already in results
+        const fromRecent = recentCategories
+          .filter((c) => matchFn(c.categoryTitle, c.teamName))
+          .filter(
+            (r) => !fromAll.some((a) => a.teamId === r.teamId && a.categoryId === r.categoryId),
+          )
+          .map((r) => ({
+            teamId: r.teamId,
+            teamName: r.teamName,
+            categoryId: r.categoryId,
+            categoryTitle: r.categoryTitle,
+            categoryColor: '',
+          }));
+        return [...fromRecent, ...fromAll];
+      })()
     : [];
 
   const isItemSelected = (teamId: number, categoryId: number) =>
-    selected !== null && selected.teamId === teamId && selected.categoryId === categoryId;
+    selectedCategory !== null &&
+    selectedCategory.teamId === teamId &&
+    selectedCategory.categoryId === categoryId;
 
   // Styles
   const popupStyle: React.CSSProperties = {
@@ -203,26 +234,6 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
     lineHeight: '1.4',
   };
 
-  const buttonStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '6px 0',
-    marginTop: 8,
-    background: '#5e6ad2',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  };
-
-  const disabledButtonStyle: React.CSSProperties = {
-    ...buttonStyle,
-    opacity: 0.4,
-    cursor: 'default',
-  };
-
   const emptyTextStyle: React.CSSProperties = {
     fontSize: 12,
     color: '#8b8fa3',
@@ -261,74 +272,133 @@ export function TimerPopup({ issueId, issueTitle, onStart, onClose, anchorRef }:
       onKeyUp={(e) => e.stopPropagation()}
       onKeyPress={(e) => e.stopPropagation()}
     >
-      <div style={{ marginBottom: 8, fontWeight: 500, paddingRight: 20 }}>
-        {issueId}: {issueTitle}
+      {/* Header row: issue info + start button */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 20 }}>
+        <div
+          style={{
+            flex: 1,
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {issueId}: {issueTitle}
+        </div>
+        <button
+          onClick={handleStart}
+          disabled={!selectedCategory}
+          style={{
+            width: 28,
+            height: 28,
+            minWidth: 28,
+            borderRadius: '50%',
+            background: selectedCategory ? '#5e6ad2' : '#383850',
+            color: '#fff',
+            border: 'none',
+            cursor: selectedCategory ? 'pointer' : 'default',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            lineHeight: 1,
+            padding: 0,
+          }}
+        >
+          ▶
+        </button>
       </div>
 
-      <input
-        type="text"
-        placeholder="カテゴリーを検索..."
-        value={searchQuery}
-        onChange={handleSearchChange}
-        style={searchInputStyle}
-        autoFocus
-      />
-
-      <div style={listContainerStyle}>
-        {isSearching ? (
-          // Search results
-          <>
-            {allCategoriesLoading && !allCategoriesLoaded && (
-              <div style={emptyTextStyle}>検索中...</div>
-            )}
-            {allCategoriesLoaded && filteredCategories.length === 0 && (
-              <div style={emptyTextStyle}>一致するカテゴリーが見つかりません</div>
-            )}
-            {filteredCategories.map((c, i) => (
-              <div
-                key={`${String(c.teamId)}-${String(c.categoryId)}`}
-                style={getItemStyle(i, c.teamId, c.categoryId)}
-                onClick={() => handleSelectCategory(c)}
-                onMouseEnter={() => setHoveredIndex(i)}
-                onMouseLeave={() => setHoveredIndex(null)}
-              >
-                {c.categoryTitle} - {c.teamName}
-              </div>
-            ))}
-          </>
-        ) : (
-          // Recent categories
-          <>
-            <div style={sectionLabelStyle}>最近使用したカテゴリー</div>
-            {recentLoading && <div style={emptyTextStyle}>読み込み中...</div>}
-            {!recentLoading && recentCategories.length === 0 && (
-              <div style={emptyTextStyle}>
-                まだ使用履歴がありません。検索からカテゴリーを選択してください。
-              </div>
-            )}
-            {!recentLoading &&
-              recentCategories.slice(0, 5).map((c, i) => (
-                <div
-                  key={`${String(c.teamId)}-${String(c.categoryId)}`}
-                  style={getItemStyle(i + 1000, c.teamId, c.categoryId)}
-                  onClick={() => handleSelectRecent(c)}
-                  onMouseEnter={() => setHoveredIndex(i + 1000)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                >
-                  {c.categoryTitle} - {c.teamName}
-                </div>
-              ))}
-          </>
-        )}
-      </div>
-
-      <button
-        style={selected ? buttonStyle : disabledButtonStyle}
-        onClick={handleStart}
-        disabled={!selected}
+      {/* Category row */}
+      <div
+        onClick={() => setIsExpanded((v) => !v)}
+        style={{
+          marginTop: 8,
+          background: '#2a2a3e',
+          borderRadius: 6,
+          padding: '6px 8px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: 12,
+          color: selectedCategoryLabel ? '#e0e0e0' : '#8b8fa3',
+        }}
       >
-        打刻開始
-      </button>
+        <span
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+          }}
+        >
+          {selectedCategoryLabel || 'カテゴリーを選択'}
+        </span>
+        <span style={{ marginLeft: 4, fontSize: 10 }}>{isExpanded ? '▲' : '▼'}</span>
+      </div>
+
+      {/* Expanded panel */}
+      {isExpanded && (
+        <>
+          <input
+            type="text"
+            placeholder="カテゴリーを検索..."
+            value={searchQuery}
+            onChange={handleSearchChange}
+            style={{ ...searchInputStyle, marginTop: 8 }}
+            autoFocus
+          />
+
+          <div style={listContainerStyle}>
+            {isSearching ? (
+              // Search results
+              <>
+                {allCategoriesLoading && !allCategoriesLoaded && (
+                  <div style={emptyTextStyle}>検索中...</div>
+                )}
+                {allCategoriesLoaded && filteredCategories.length === 0 && (
+                  <div style={emptyTextStyle}>一致するカテゴリーが見つかりません</div>
+                )}
+                {filteredCategories.map((c, i) => (
+                  <div
+                    key={`${String(c.teamId)}-${String(c.categoryId)}`}
+                    style={getItemStyle(i, c.teamId, c.categoryId)}
+                    onClick={() => handleSelectCategory(c)}
+                    onMouseEnter={() => setHoveredIndex(i)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                  >
+                    {c.categoryTitle} - {c.teamName}
+                  </div>
+                ))}
+              </>
+            ) : (
+              // Recent categories
+              <>
+                <div style={sectionLabelStyle}>最近使用したカテゴリー</div>
+                {recentLoading && <div style={emptyTextStyle}>読み込み中...</div>}
+                {!recentLoading && recentCategories.length === 0 && (
+                  <div style={emptyTextStyle}>
+                    まだ使用履歴がありません。検索からカテゴリーを選択してください。
+                  </div>
+                )}
+                {!recentLoading &&
+                  recentCategories.slice(0, 5).map((c, i) => (
+                    <div
+                      key={`${String(c.teamId)}-${String(c.categoryId)}`}
+                      style={getItemStyle(i + 1000, c.teamId, c.categoryId)}
+                      onClick={() => handleSelectRecent(c)}
+                      onMouseEnter={() => setHoveredIndex(i + 1000)}
+                      onMouseLeave={() => setHoveredIndex(null)}
+                    >
+                      {c.categoryTitle} - {c.teamName}
+                    </div>
+                  ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 4 }}>{error}</div>}
 
